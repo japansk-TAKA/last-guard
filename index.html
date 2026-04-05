@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LAST-Guard — 局所麻酔薬最大投与量計算</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242736;
+      --border: #2e3248;
+      --text: #e8eaf0;
+      --text-muted: #8890a8;
+      --accent: #4f8ef7;
+      --accent-dim: #2a4a8a;
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --red-bg: #3b1f1f;
+      --card-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+      padding-bottom: 40px;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1a2a5e 0%, #0f1117 100%);
+      padding: 20px 16px 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .header-icon {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 38px;
+    }
+
+    /* Sections */
+    .section {
+      margin: 12px 12px 0;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+      padding-left: 4px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--card-shadow);
+    }
+
+    /* Weight Input */
+    .weight-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .weight-display {
+      text-align: center;
+      min-width: 80px;
+    }
+
+    .weight-value {
+      font-size: 40px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .weight-unit {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .weight-slider-wrap {
+      flex: 1;
+    }
+
+    .weight-slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 3px solid var(--surface);
+      box-shadow: 0 2px 8px rgba(79,142,247,0.4);
+    }
+
+    .weight-input-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    .weight-input-row input[type="number"] {
+      width: 80px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .weight-input-row span {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Total Toxicity Meter */
+    .toxicity-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .toxicity-card.danger {
+      border-color: var(--red);
+      background: var(--red-bg);
+      animation: pulse-danger 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-danger {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); }
+      50% { box-shadow: 0 0 0 6px rgba(248,113,113,0.15); }
+    }
+
+    .toxicity-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .toxicity-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .toxicity-pct {
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .toxicity-pct.safe { color: var(--green); }
+    .toxicity-pct.warn { color: var(--yellow); }
+    .toxicity-pct.danger { color: var(--red); }
+
+    .toxicity-bar-track {
+      height: 12px;
+      background: var(--surface2);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .toxicity-bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width 0.3s ease, background 0.3s ease;
+      background: var(--green);
+    }
+
+    .toxicity-bar-fill.warn { background: var(--yellow); }
+    .toxicity-bar-fill.danger { background: var(--red); }
+
+    .toxicity-warning {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      background: rgba(248,113,113,0.15);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--red);
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    .toxicity-warning.show { display: flex; }
+
+    .threshold-marks {
+      display: flex;
+      gap: 0;
+      margin-top: 4px;
+    }
+
+    .threshold-mark {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    /* Drug Cards */
+    .drug-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .drug-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--card-shadow);
+      position: relative;
+    }
+
+    .drug-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .drug-select {
+      flex: 1;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238890a8' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 30px;
+    }
+
+    .drug-remove-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      line-height: 1;
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .drug-remove-btn:hover {
+      color: var(--red);
+      background: rgba(248,113,113,0.1);
+    }
+
+    .drug-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .drug-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 50px;
+    }
+
+    .drug-conc-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .preset-btn {
+      padding: 5px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .preset-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .conc-custom-input {
+      width: 70px;
+      padding: 5px 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* Epi Toggle */
+    .epi-toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: 0.3s;
+    }
+
+    .toggle-slider:before {
+      content: '';
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: rgba(52,211,153,0.2);
+      border-color: var(--green);
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+      background: var(--green);
+    }
+
+    .epi-label {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .epi-label.active {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    /* Drug usage input */
+    .usage-input {
+      width: 80px;
+      padding: 6px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    /* Progress bar in drug card */
+    .drug-progress-wrap {
+      margin-top: 10px;
+    }
+
+    .drug-progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .drug-progress-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .drug-progress-values {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .drug-progress-values .used { color: var(--text); }
+    .drug-progress-values .sep { color: var(--text-muted); margin: 0 4px; }
+    .drug-progress-values .max { color: var(--text-muted); }
+
+    .drug-progress-track {
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .drug-progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease, background 0.3s ease;
+      background: var(--green);
+    }
+
+    .drug-progress-fill.warn { background: var(--yellow); }
+    .drug-progress-fill.danger { background: var(--red); }
+
+    .drug-progress-ml {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    .drug-progress-ml span { color: var(--text); font-weight: 600; }
+
+    .drug-max-info {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+    }
+
+    .drug-max-item {
+      flex: 1;
+      text-align: center;
+    }
+
+    .drug-max-item-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+
+    .drug-max-item-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* Add Drug Button */
+    .add-drug-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface2);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .add-drug-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* Collapsible */
+    .collapsible-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .collapsible-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .collapsible-arrow {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: transform 0.3s;
+    }
+
+    .collapsible-arrow.open { transform: rotate(180deg); }
+
+    .collapsible-body {
+      display: none;
+      margin-top: 12px;
+    }
+
+    .collapsible-body.open { display: block; }
+
+    /* LAST Symptoms */
+    .last-symptoms {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .symptom-group {
+      grid-column: 1 / -1;
+      margin-top: 8px;
+    }
+
+    .symptom-group:first-child { margin-top: 0; }
+
+    .symptom-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+
+    .symptom-group-label.cns { color: #a78bfa; }
+    .symptom-group-label.cvs { color: var(--red); }
+
+    .symptom-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .symptom-tag {
+      padding: 4px 9px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    .symptom-tag.early {
+      background: rgba(167,139,250,0.15);
+      border: 1px solid rgba(167,139,250,0.3);
+      color: #a78bfa;
+    }
+
+    .symptom-tag.late {
+      background: rgba(248,113,113,0.15);
+      border: 1px solid rgba(248,113,113,0.3);
+      color: var(--red);
+    }
+
+    .last-progression {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .last-progression strong { color: var(--text); }
+
+    /* Lipid Rescue */
+    .lipid-section {
+      margin-top: 12px;
+    }
+
+    .lipid-calc {
+      padding: 12px;
+      background: rgba(79,142,247,0.08);
+      border: 1px solid rgba(79,142,247,0.2);
+      border-radius: var(--radius-sm);
+    }
+
+    .lipid-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .lipid-row:last-child { border-bottom: none; }
+
+    .lipid-row-label {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .lipid-row-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .lipid-note {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Evidence footer */
+    .evidence-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      background: rgba(79,142,247,0.1);
+      border: 1px solid rgba(79,142,247,0.2);
+      border-radius: 20px;
+      font-size: 11px;
+      color: var(--accent);
+      margin-top: 6px;
+    }
+
+    .disclaimer {
+      margin: 16px 12px 0;
+      padding: 10px 12px;
+      background: rgba(251,191,36,0.08);
+      border: 1px solid rgba(251,191,36,0.2);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      color: var(--yellow);
+      line-height: 1.5;
+    }
+
+    /* Inputs */
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+    }
+
+    select, input { outline: none; }
+    select:focus, input:focus {
+      border-color: var(--accent);
+    }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 12px 0;
+    }
+
+    /* Fraction display */
+    .fraction-display {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <span class="header-icon">💉</span>
+      <h1>LAST-Guard</h1>
+    </div>
+    <div class="header-subtitle">局所麻酔薬 最大投与量計算 &amp; 毒性モニター</div>
+  </div>
+
+  <!-- Weight -->
+  <div class="section">
+    <div class="section-title">体重</div>
+    <div class="card weight-card">
+      <div class="weight-display">
+        <div class="weight-value" id="weightDisplay">60</div>
+        <div class="weight-unit">kg</div>
+      </div>
+      <div class="weight-slider-wrap">
+        <div class="weight-slider-labels">
+          <span>30</span>
+          <span>60</span>
+          <span>90</span>
+          <span>120</span>
+        </div>
+        <input type="range" id="weightSlider" min="30" max="120" value="60" step="1">
+        <div class="weight-input-row">
+          <input type="number" id="weightInput" value="60" min="1" max="300">
+          <span>kg を直接入力</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Total Toxicity Meter -->
+  <div class="section">
+    <div class="section-title">合計毒性メーター</div>
+    <div class="card toxicity-card" id="toxicityCard">
+      <div class="toxicity-header">
+        <div>
+          <div class="toxicity-title">カクテル毒性率</div>
+          <div class="fraction-display" id="toxicityFormula">— </div>
+          <div class="evidence-badge">⚗️ Bateman's Formula準拠</div>
+        </div>
+        <div class="toxicity-pct safe" id="toxicityPct">0%</div>
+      </div>
+      <div class="toxicity-bar-track">
+        <div class="toxicity-bar-fill" id="toxicityBar" style="width:0%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin-top:4px;">
+        <span>0%</span>
+        <span style="color:var(--yellow)">50% 注意</span>
+        <span style="color:var(--red)">80% 危険</span>
+        <span>100%</span>
+      </div>
+      <div class="toxicity-warning" id="toxicityWarning">
+        <span>⚠️</span>
+        <span>毒性リスク高 — 投与量を減らしてください</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drug Cards -->
+  <div class="section">
+    <div class="section-title">薬剤カード</div>
+    <div class="drug-list" id="drugList"></div>
+    <button class="add-drug-btn" id="addDrugBtn" style="margin-top:10px;">
+      <span style="font-size:18px;">＋</span> 薬剤を追加
+    </button>
+  </div>
+
+  <!-- LAST Symptoms -->
+  <div class="section">
+    <div class="card">
+      <div class="collapsible-header" onclick="toggleCollapsible('lastSymptoms')">
+        <span class="collapsible-title">🚨 LAST症状クイックリファレンス</span>
+        <span class="collapsible-arrow" id="lastSymptomsArrow">▼</span>
+      </div>
+      <div class="collapsible-body" id="lastSymptoms">
+        <div class="symptom-group">
+          <div class="symptom-group-label cns">CNS症状（早期）</div>
+          <div class="symptom-list">
+            <span class="symptom-tag early">口周囲しびれ</span>
+            <span class="symptom-tag early">金属味</span>
+            <span class="symptom-tag early">耳鳴り</span>
+            <span class="symptom-tag early">めまい</span>
+            <span class="symptom-tag early">視力障害</span>
+            <span class="symptom-tag early">興奮・不安</span>
+          </div>
+        </div>
+        <div class="symptom-group">
+          <div class="symptom-group-label cns">CNS症状（後期）</div>
+          <div class="symptom-list">
+            <span class="symptom-tag late">筋肉振戦</span>
+            <span class="symptom-tag late">痙攣発作</span>
+            <span class="symptom-tag late">意識消失</span>
+          </div>
+        </div>
+        <div class="symptom-group">
+          <div class="symptom-group-label cvs">心血管症状</div>
+          <div class="symptom-list">
+            <span class="symptom-tag late">徐脈</span>
+            <span class="symptom-tag late">低血圧</span>
+            <span class="symptom-tag late">心室不整脈</span>
+            <span class="symptom-tag late">心停止</span>
+          </div>
+        </div>
+        <div class="last-progression">
+          <strong>覚え方 (LAST):</strong><br>
+          L — Lightheadedness / 頭痛・めまい<br>
+          A — Arrhythmia / 不整脈<br>
+          S — Seizure / 痙攣<br>
+          T — Toxicity → Cardiac arrest / 心停止
+        </div>
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(167,139,250,0.1);border-radius:8px;font-size:12px;color:#a78bfa;line-height:1.6;">
+          <strong>注意:</strong> Bupivacaineは心毒性が特に高く、CNS症状なしに突然心停止を起こすことがある。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lipid Rescue -->
+  <div class="section">
+    <div class="card">
+      <div class="collapsible-header" onclick="toggleCollapsible('lipidRescue')">
+        <span class="collapsible-title">🧪 Lipid Rescue（脂肪乳剤療法）</span>
+        <span class="collapsible-arrow" id="lipidRescueArrow">▼</span>
+      </div>
+      <div class="collapsible-body" id="lipidRescue">
+        <div class="lipid-section">
+          <div class="lipid-calc" id="lipidCalc">
+            <!-- Filled by JS -->
+          </div>
+          <div class="lipid-note">
+            ※ 20% Intralipid使用。ASRA LAST救治プロトコル準拠。<br>
+            ① ボーラス → ② 持続投与 → 心肺蘇生継続<br>
+            最大量: 12 mL/kg (30分)
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(248,113,113,0.1);border-radius:8px;font-size:12px;color:var(--red);line-height:1.6;">
+          <strong>LAST発症時プロトコル:</strong><br>
+          1. 即座に局所麻酔投与中止<br>
+          2. 助けを呼ぶ・ABCの確保<br>
+          3. 痙攣 → Benzodiazepine（first-line）<br>
+          4. 20% Intralipid IV ボーラス投与<br>
+          5. 心停止 → CPR継続（長時間）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disclaimer -->
+  <div class="disclaimer">
+    ⚠️ 本アプリは臨床の補助ツールです。実際の投与量は患者状態・術式・施設プロトコルに従い、
+    担当医師が最終判断してください。エビデンス: Miller's Anesthesia 9th Ed / AAGBI / ASRA準拠。
+  </div>
+
+  <script>
+    // === Drug Database ===
+    const DRUGS = {
+      lidocaine: {
+        name: 'Lidocaine（リドカイン）',
+        short: 'Lidocaine',
+        maxPlain: 3,    // mg/kg
+        maxEpi: 7,      // mg/kg
+        concentrations: [0.5, 1, 2],
+        color: '#4f8ef7'
+      },
+      bupivacaine: {
+        name: 'Bupivacaine（ブピバカイン）',
+        short: 'Bupivacaine',
+        maxPlain: 2,
+        maxEpi: 2.5,
+        concentrations: [0.25, 0.5, 0.75],
+        color: '#a78bfa'
+      },
+      ropivacaine: {
+        name: 'Ropivacaine（ロピバカイン）',
+        short: 'Ropivacaine',
+        maxPlain: 3,
+        maxEpi: 4,
+        concentrations: [0.2, 0.5, 0.75, 1],
+        color: '#34d399'
+      },
+      mepivacaine: {
+        name: 'Mepivacaine（メピバカイン）',
+        short: 'Mepivacaine',
+        maxPlain: 4,
+        maxEpi: 7,
+        concentrations: [1, 1.5, 2],
+        color: '#fbbf24'
+      }
+    };
+
+    // === State ===
+    let weight = 60;
+    let cards = [];
+    let cardIdCounter = 0;
+
+    // === Weight ===
+    const weightSlider = document.getElementById('weightSlider');
+    const weightInput = document.getElementById('weightInput');
+    const weightDisplay = document.getElementById('weightDisplay');
+
+    function onWeightSliderChange() {
+      weight = parseInt(weightSlider.value);
+      weightInput.value = weight;
+      weightDisplay.textContent = weight;
+      updateAll();
+    }
+    weightSlider.addEventListener('input', onWeightSliderChange);
+    weightSlider.addEventListener('change', onWeightSliderChange);
+
+    function onWeightInputChange() {
+      const v = parseInt(weightInput.value);
+      if (!isNaN(v) && v > 0) {
+        weight = v;
+        const sliderVal = Math.min(Math.max(v, 30), 120);
+        weightSlider.value = sliderVal;
+        weightDisplay.textContent = weight;
+        updateAll();
+      }
+    }
+    weightInput.addEventListener('input', onWeightInputChange);
+    weightInput.addEventListener('change', onWeightInputChange);
+
+    // === Card Management ===
+    function addDrug(drugKey = 'lidocaine') {
+      const id = ++cardIdCounter;
+      cards.push({
+        id,
+        drugKey,
+        concentration: DRUGS[drugKey].concentrations[1] || DRUGS[drugKey].concentrations[0],
+        epi: false,
+        usageMl: 0
+      });
+      renderCards();
+      updateAll();
+    }
+
+    function removeCard(id) {
+      cards = cards.filter(c => c.id !== id);
+      renderCards();
+      updateAll();
+    }
+
+    function renderCards() {
+      const list = document.getElementById('drugList');
+      list.innerHTML = '';
+      cards.forEach(card => {
+        const drug = DRUGS[card.drugKey];
+        const el = document.createElement('div');
+        el.className = 'drug-card';
+        el.id = `card-${card.id}`;
+
+        // Preset buttons HTML
+        const presetBtns = drug.concentrations.map(c => {
+          const active = c === card.concentration ? ' active' : '';
+          return `<button class="preset-btn${active}" onclick="setConcentration(${card.id}, ${c})">${c}%</button>`;
+        }).join('');
+
+        el.innerHTML = `
+          <div class="drug-card-header">
+            <select class="drug-select" onchange="changeDrug(${card.id}, this.value)">
+              ${Object.entries(DRUGS).map(([k, d]) =>
+                `<option value="${k}"${k === card.drugKey ? ' selected' : ''}>${d.name}</option>`
+              ).join('')}
+            </select>
+            <button class="drug-remove-btn" onclick="removeCard(${card.id})">✕</button>
+          </div>
+
+          <div class="drug-row">
+            <span class="drug-label">濃度</span>
+            <div class="drug-conc-presets" id="presets-${card.id}">
+              ${presetBtns}
+              <input type="number" class="conc-custom-input" placeholder="カスタム"
+                id="concInput-${card.id}"
+                value="${drug.concentrations.includes(card.concentration) ? '' : card.concentration}"
+                step="0.1" min="0.1" max="10"
+                onchange="setConcentrationCustom(${card.id}, this.value)">
+            </div>
+          </div>
+
+          <div class="drug-row">
+            <span class="drug-label">Adrenaline</span>
+            <div class="epi-toggle-wrap">
+              <label class="toggle-switch">
+                <input type="checkbox" id="epi-${card.id}" ${card.epi ? 'checked' : ''}
+                  onchange="toggleEpi(${card.id}, this.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="epi-label ${card.epi ? 'active' : ''}" id="epiLabel-${card.id}">
+                ${card.epi ? '添加あり (+Epi)' : '添加なし'}
+              </span>
+            </div>
+          </div>
+
+          <div class="drug-row">
+            <span class="drug-label">使用量</span>
+            <input type="number" class="usage-input" id="usage-${card.id}"
+              value="${card.usageMl}" min="0" step="1"
+              oninput="setUsage(${card.id}, this.value)">
+            <span style="font-size:13px;color:var(--text-muted);margin-left:4px;">mL</span>
+          </div>
+
+          <div class="drug-progress-wrap" id="progress-${card.id}">
+            <!-- filled by updateCardUI -->
+          </div>
+        `;
+        list.appendChild(el);
+        updateCardUI(card.id);
+      });
+    }
+
+    function changeDrug(id, drugKey) {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      card.drugKey = drugKey;
+      card.concentration = DRUGS[drugKey].concentrations[1] || DRUGS[drugKey].concentrations[0];
+      renderCards();
+      updateAll();
+    }
+
+    function setConcentration(id, conc) {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      card.concentration = conc;
+
+      // Update preset buttons
+      const container = document.getElementById(`presets-${id}`);
+      if (container) {
+        container.querySelectorAll('.preset-btn').forEach(btn => {
+          btn.classList.toggle('active', parseFloat(btn.textContent) === conc);
+        });
+        const customInput = document.getElementById(`concInput-${id}`);
+        if (customInput) customInput.value = '';
+      }
+      updateCardUI(id);
+      updateAll();
+    }
+
+    function setConcentrationCustom(id, val) {
+      const conc = parseFloat(val);
+      if (isNaN(conc) || conc <= 0) return;
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      card.concentration = conc;
+
+      // Deactivate preset buttons
+      const container = document.getElementById(`presets-${id}`);
+      if (container) {
+        container.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+      }
+      updateCardUI(id);
+      updateAll();
+    }
+
+    function toggleEpi(id, checked) {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      card.epi = checked;
+      const label = document.getElementById(`epiLabel-${id}`);
+      if (label) {
+        label.textContent = checked ? '添加あり (+Epi)' : '添加なし';
+        label.className = `epi-label ${checked ? 'active' : ''}`;
+      }
+      updateCardUI(id);
+      updateAll();
+    }
+
+    function setUsage(id, val) {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      card.usageMl = parseFloat(val) || 0;
+      updateCardUI(id);
+      updateAll();
+    }
+
+    function updateCardUI(id) {
+      const card = cards.find(c => c.id === id);
+      if (!card) return;
+      const drug = DRUGS[card.drugKey];
+
+      const maxMgPerKg = card.epi ? drug.maxEpi : drug.maxPlain;
+      const maxMg = maxMgPerKg * weight;
+      // mg/mL = concentration% * 10
+      const mgPerMl = card.concentration * 10;
+      const maxMl = mgPerMl > 0 ? maxMg / mgPerMl : 0;
+      const usedMg = card.usageMl * mgPerMl;
+      const pct = maxMg > 0 ? Math.min((usedMg / maxMg) * 100, 100) : 0;
+
+      let fillClass = 'safe';
+      if (pct >= 80) fillClass = 'danger';
+      else if (pct >= 50) fillClass = 'warn';
+
+      const progressEl = document.getElementById(`progress-${id}`);
+      if (!progressEl) return;
+
+      progressEl.innerHTML = `
+        <div class="drug-max-info">
+          <div class="drug-max-item">
+            <div class="drug-max-item-label">最大量 (mg)</div>
+            <div class="drug-max-item-value">${maxMg.toFixed(0)} mg</div>
+          </div>
+          <div class="drug-max-item">
+            <div class="drug-max-item-label">最大量 (mL)</div>
+            <div class="drug-max-item-value">${maxMl.toFixed(1)} mL</div>
+          </div>
+          <div class="drug-max-item">
+            <div class="drug-max-item-label">${maxMgPerKg} mg/kg</div>
+            <div class="drug-max-item-value" style="color:var(--text-muted);font-size:12px;">${card.epi ? '+Epi' : 'plain'}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <div class="drug-progress-header">
+            <span class="drug-progress-label">使用量 vs 最大量</span>
+            <span class="drug-progress-values">
+              <span class="used">${usedMg.toFixed(1)}mg</span>
+              <span class="sep">/</span>
+              <span class="max">${maxMg.toFixed(0)}mg</span>
+              <span style="margin-left:6px;font-size:12px;color:${pct>=80?'var(--red)':pct>=50?'var(--yellow)':'var(--green)'};">${pct.toFixed(0)}%</span>
+            </span>
+          </div>
+          <div class="drug-progress-track">
+            <div class="drug-progress-fill ${fillClass}" style="width:${pct}%"></div>
+          </div>
+          <div class="drug-progress-ml">
+            使用: <span>${card.usageMl.toFixed(1)} mL</span>
+            &nbsp;/&nbsp;
+            最大: <span>${maxMl.toFixed(1)} mL</span>
+            &nbsp;(${card.concentration}%, ${mgPerMl}mg/mL)
+          </div>
+        </div>
+      `;
+    }
+
+    // === Total Toxicity ===
+    function updateAll() {
+      // Refresh each card's UI (needed when weight changes)
+      cards.forEach(card => updateCardUI(card.id));
+
+      let totalFraction = 0;
+      const parts = [];
+
+      cards.forEach(card => {
+        const drug = DRUGS[card.drugKey];
+        const maxMgPerKg = card.epi ? drug.maxEpi : drug.maxPlain;
+        const maxMg = maxMgPerKg * weight;
+        const mgPerMl = card.concentration * 10;
+        const usedMg = card.usageMl * mgPerMl;
+        if (maxMg > 0) {
+          const frac = usedMg / maxMg;
+          totalFraction += frac;
+          parts.push(`${drug.short.substring(0,4)} ${(frac*100).toFixed(0)}%`);
+        }
+      });
+
+      const pct = Math.min(totalFraction * 100, 999);
+      const displayPct = Math.min(pct, 100);
+
+      // Update UI
+      const pctEl = document.getElementById('toxicityPct');
+      const barEl = document.getElementById('toxicityBar');
+      const formulaEl = document.getElementById('toxicityFormula');
+      const warningEl = document.getElementById('toxicityWarning');
+      const cardEl = document.getElementById('toxicityCard');
+
+      pctEl.textContent = `${pct.toFixed(0)}%`;
+
+      let colorClass = 'safe';
+      if (pct >= 80) colorClass = 'danger';
+      else if (pct >= 50) colorClass = 'warn';
+
+      pctEl.className = `toxicity-pct ${colorClass}`;
+      barEl.style.width = `${Math.min(displayPct, 100)}%`;
+      barEl.className = `toxicity-bar-fill ${colorClass}`;
+
+      formulaEl.textContent = parts.length > 0
+        ? `Σ(used/max): ${parts.join(' + ')} = ${pct.toFixed(0)}%`
+        : '— 薬剤を追加してください';
+
+      if (pct >= 80) {
+        warningEl.classList.add('show');
+        cardEl.classList.add('danger');
+      } else {
+        warningEl.classList.remove('show');
+        cardEl.classList.remove('danger');
+      }
+
+      updateLipidCalc();
+    }
+
+    // === Lipid Rescue Calc ===
+    function updateLipidCalc() {
+      const bolusMl = (1.5 * weight).toFixed(1);   // 1.5 mL/kg bolus
+      const infusionMl = (0.25 * weight).toFixed(1); // 0.25 mL/kg/min x 10min
+      const maxMl = (12 * weight).toFixed(0);
+
+      document.getElementById('lipidCalc').innerHTML = `
+        <div class="lipid-row">
+          <span class="lipid-row-label">初期ボーラス (1.5 mL/kg)</span>
+          <span class="lipid-row-value">${bolusMl} mL IV</span>
+        </div>
+        <div class="lipid-row">
+          <span class="lipid-row-label">持続投与 (0.25 mL/kg/min × 10分)</span>
+          <span class="lipid-row-value">${infusionMl} mL/min</span>
+        </div>
+        <div class="lipid-row">
+          <span class="lipid-row-label">必要時ボーラス追加 (1.5 mL/kg)</span>
+          <span class="lipid-row-value">${bolusMl} mL IV</span>
+        </div>
+        <div class="lipid-row">
+          <span class="lipid-row-label">最大投与量 (12 mL/kg)</span>
+          <span class="lipid-row-value">${maxMl} mL</span>
+        </div>
+      `;
+    }
+
+    // === Collapsible ===
+    function toggleCollapsible(id) {
+      const body = document.getElementById(id);
+      const arrow = document.getElementById(id + 'Arrow');
+      body.classList.toggle('open');
+      arrow.classList.toggle('open');
+    }
+
+    // === Add Drug Button ===
+    document.getElementById('addDrugBtn').addEventListener('click', () => {
+      addDrug('lidocaine');
+    });
+
+    // === Init ===
+    addDrug('lidocaine');
+    updateLipidCalc();
+  </script>
+</body>
+</html>

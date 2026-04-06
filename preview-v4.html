@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- PREVENT SCALING FOR APP-LIKE FEEL -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LAST-Guard | Toxicity Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* =========================================
+       BASE & RESET
+       ========================================= */
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { font-family: 'Inter','Noto Sans JP',sans-serif; margin:0; }
+    ::-webkit-scrollbar { width:0; }
+
+    /* =========================================
+       TAB & DRAWER BEHAVIOR
+       ========================================= */
+    .tab-panel { display:none; flex-direction:column; }
+    .tab-panel.active { display:flex; }
+
+    .drawer { transform:translateX(-100%); transition:transform 0.35s cubic-bezier(0.22,1,0.36,1); }
+    .drawer.open { transform:translateX(0); }
+
+    .dim { opacity:0; pointer-events:none; transition:opacity 0.35s cubic-bezier(0.22,1,0.36,1); }
+    .dim.show { opacity:1; pointer-events:all; }
+
+    /* =========================================
+       MICRO-INTERACTIONS & DEPTH UTILITIES
+       ========================================= */
+    .btn-press {
+      transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .btn-press:active {
+      transform: scale(0.96);
+      filter: brightness(1.2);
+    }
+
+    .glass-panel {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px -4px rgba(0, 0, 0, 0.6);
+    }
+
+    .glass-popover {
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 24px 48px rgba(0, 0, 0, 0.8);
+    }
+
+    .deep-inset {
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Popover Keyframes */
+    @keyframes popIn {
+      0% { opacity: 0; transform: translateY(6px) scale(0.97); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    #wt-popover:not(.hidden), #risk-popover:not(.hidden) {
+      animation: popIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* =========================================
+       SMOOTH ACCORDION (OVERRIDING JS DISPLAY)
+       ========================================= */
+    .drug-detail {
+      max-height: 0;
+      opacity: 0;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-top-color: transparent !important;
+      overflow: hidden;
+      transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .drug-item.open .drug-detail {
+      max-height: 400px;
+      opacity: 1;
+      padding-top: 0.75rem !important; /* matches original py-3 */
+      padding-bottom: 0.75rem !important;
+      border-top-color: #1a1a1a !important;
+    }
+    .chevron { transition:transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+    .drug-item.open .chevron { transform:rotate(180deg); }
+
+    /* =========================================
+       GAUGE & INPUT TYPOGRAPHY
+       ========================================= */
+    .gauge-arc {
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.22,1,0.36,1), stroke 0.4s ease, filter 0.4s ease;
+    }
+
+    #tox-val {
+      text-shadow: 0 0 24px rgba(255,255,255,0.15);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #weight-btn { touch-action:none; }
+    body.wdragging { user-select:none; }
+
+    input[type=number] {
+      -moz-appearance:textfield;
+      font-variant-numeric: tabular-nums;
+    }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; }
+  </style>
+</head>
+<body class="bg-[#050505] text-white overflow-hidden" style="height:100dvh">
+
+<div id="app" class="w-full max-w-[390px] mx-auto flex flex-col relative overflow-hidden" style="height:100dvh">
+
+  <!-- DIM -->
+  <div id="dim" class="dim absolute inset-0 bg-black/80 backdrop-blur-[2px] z-20"></div>
+
+  <!-- DRAWER -->
+  <div id="drawer" class="drawer absolute inset-y-0 left-0 w-72 bg-[#0c0c0c] border-r border-[#1a1a1a] shadow-[12px_0_32px_rgba(0,0,0,0.8)] z-30 flex flex-col">
+    <div class="flex items-center justify-between px-4 py-4 border-b border-[#1a1a1a]">
+      <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">局所麻酔薬を選択</span>
+      <button onclick="closeDrawer()" class="text-gray-500 hover:text-white transition-colors btn-press text-lg leading-none">✕</button>
+    </div>
+    <div id="drug-selector" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+  </div>
+
+  <!-- WEIGHT POPOVER (fixed) -->
+  <div id="wt-popover" class="hidden fixed z-50 bg-[#131313] border border-[#262626] rounded-2xl p-4 glass-popover" style="width:210px">
+    <div class="text-[9px] text-gray-500 font-semibold uppercase tracking-[0.15em] text-center mb-3">患者体重</div>
+    <div class="flex items-center gap-2 mb-3">
+      <button onclick="adjustWt(-5)" class="flex-1 bg-[#0a0a0a] hover:bg-[#111] border border-[#222] rounded-xl py-2 text-sm font-mono text-gray-400 transition-colors btn-press shadow-sm">−5</button>
+      <input type="number" id="wt-pop-input" value="60" min="1" max="250"
+        class="flex-1 bg-transparent text-3xl font-black text-white text-center outline-none border-b border-emerald-500/50 focus:border-emerald-400 py-0.5 tracking-tighter shadow-inner transition-colors"
+        style="font-family:'Space Mono',monospace;width:60px; text-shadow: 0 0 16px rgba(255,255,255,0.15)"
+        oninput="setWtDirect(parseFloat(this.value)||60)">
+      <button onclick="adjustWt(+5)" class="flex-1 bg-[#0a0a0a] hover:bg-[#111] border border-[#222] rounded-xl py-2 text-sm font-mono text-gray-400 transition-colors btn-press shadow-sm">+5</button>
+    </div>
+    <div class="flex gap-1.5 mb-3">
+      <button onclick="adjustWt(-1)" class="flex-1 bg-[#0a0a0a] hover:bg-[#111] border border-[#222] rounded-lg py-1.5 text-xs font-mono text-gray-400 transition-colors btn-press shadow-sm">−1</button>
+      <button onclick="adjustWt(+1)" class="flex-1 bg-[#0a0a0a] hover:bg-[#111] border border-[#222] rounded-lg py-1.5 text-xs font-mono text-gray-400 transition-colors btn-press shadow-sm">+1</button>
+    </div>
+    <div class="grid grid-cols-5 gap-1">
+      <button onclick="presetWt(40)" data-preset="40" class="bg-[#0a0a0a] hover:bg-[#151515] border border-[#222] hover:border-[#333] hover:text-gray-300 rounded-lg py-1.5 text-[10px] font-mono text-gray-500 transition-all btn-press">40</button>
+      <button onclick="presetWt(50)" data-preset="50" class="bg-[#0a0a0a] hover:bg-[#151515] border border-[#222] hover:border-[#333] hover:text-gray-300 rounded-lg py-1.5 text-[10px] font-mono text-gray-500 transition-all btn-press">50</button>
+      <button onclick="presetWt(60)" data-preset="60" class="bg-[#0a0a0a] hover:bg-[#151515] border border-[#222] border-emerald-500/30 text-emerald-400 hover:border-emerald-400 rounded-lg py-1.5 text-[10px] font-mono transition-all btn-press shadow-[inset_0_0_8px_rgba(16,185,129,0.1)]">60</button>
+      <button onclick="presetWt(70)" data-preset="70" class="bg-[#0a0a0a] hover:bg-[#151515] border border-[#222] hover:border-[#333] hover:text-gray-300 rounded-lg py-1.5 text-[10px] font-mono text-gray-500 transition-all btn-press">70</button>
+      <button onclick="presetWt(80)" data-preset="80" class="bg-[#0a0a0a] hover:bg-[#151515] border border-[#222] hover:border-[#333] hover:text-gray-300 rounded-lg py-1.5 text-[10px] font-mono text-gray-500 transition-all btn-press">80</button>
+    </div>
+  </div>
+
+  <!-- RISK FACTOR POPOVER (fixed) -->
+  <div id="risk-popover" class="hidden fixed z-50 bg-[#131313] border border-[#262626] rounded-2xl glass-popover overflow-hidden" style="left:12px;right:12px;max-width:366px">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-[#1c1c1c]">
+      <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">患者リスク因子</span>
+      <button onclick="closeRiskPopover()" class="text-gray-500 hover:text-white transition-colors btn-press text-lg leading-none">✕</button>
+    </div>
+    <div class="p-3 space-y-1.5" id="risk-check-list"></div>
+    <div class="px-4 py-2 border-t border-[#1c1c1c] bg-[#111]">
+      <p class="text-[9px] text-gray-500 leading-relaxed font-medium">いずれかの因子がある場合、標準用量でも毒性リスクが高まります。算出された Toxicity % はあくまで参考値です。</p>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header class="flex items-center justify-between px-4 py-3 border-b border-[#141414] shrink-0 z-10 bg-[#050505]">
+    <button onclick="openDrawer()" class="flex flex-col justify-center gap-[5px] p-1.5 -ml-1.5 btn-press opacity-80 hover:opacity-100 transition-opacity">
+      <span class="block w-[18px] h-[1.5px] bg-white rounded-full"></span>
+      <span class="block w-[18px] h-[1.5px] bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.4)]"></span>
+      <span class="block w-[18px] h-[1.5px] bg-white rounded-full"></span>
+    </button>
+    <div class="flex items-center gap-1.5">
+      <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.8)] animate-pulse"></span>
+      <span class="text-[15px] font-black tracking-[0.2em] text-white uppercase text-shadow-sm" style="font-family:'Space Mono',monospace">LAST-GUARD</span>
+    </div>
+    <button id="weight-btn" onclick="toggleWtPopover(event)"
+      class="flex flex-col items-center bg-[#101010] border border-[#222] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.5)] rounded-xl px-3 py-1.5 select-none btn-press hover:bg-[#151515] hover:border-[#333] transition-colors"
+      style="touch-action:none">
+      <span class="text-[8px] font-bold text-gray-500 leading-none mb-0.5 tracking-widest text-[#10b981]">WGT ↕</span>
+      <div class="flex items-baseline gap-0.5">
+        <span id="wt-display" class="text-lg font-black text-white tracking-tighter" style="font-family:'Space Mono',monospace">60</span>
+        <span class="text-[10px] text-gray-500 font-semibold tracking-tight" style="font-family:'Space Mono',monospace">kg</span>
+      </div>
+    </button>
+  </header>
+
+  <!-- TAB BAR -->
+  <nav class="flex border-b border-[#141414] shrink-0 z-10 bg-[#050505]">
+    <button class="tab-btn flex-1 py-2.5 text-[11px] font-bold tracking-[0.1em] uppercase border-b-2 border-emerald-500 text-emerald-400 transition-all duration-300" data-tab="toxicity">⚡ Toxicity</button>
+    <button class="tab-btn flex-1 py-2.5 text-[11px] font-bold tracking-[0.1em] uppercase border-b-2 border-transparent text-gray-500 hover:text-gray-300 transition-all duration-300" data-tab="symptoms">⚠ Symptoms</button>
+    <button class="tab-btn flex-1 py-2.5 text-[11px] font-bold tracking-[0.1em] uppercase border-b-2 border-transparent text-gray-500 hover:text-gray-300 transition-all duration-300" data-tab="lipid">💉 Lipid</button>
+  </nav>
+
+  <!-- TAB: TOXICITY -->
+  <div id="tab-toxicity" class="tab-panel active flex-1 overflow-hidden">
+
+    <!-- Gauge -->
+    <div class="flex items-center justify-center pt-4 pb-2 shrink-0">
+      <div class="relative drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)]" style="width:210px;height:210px">
+        <svg viewBox="0 0 240 240" width="210" height="210" style="transform:rotate(-90deg)">
+          <!-- Track -->
+          <circle cx="120" cy="120" r="100" stroke="#141414" stroke-width="16" fill="none" />
+          <circle cx="120" cy="120" r="100" stroke="#0a0a0a" stroke-width="14" fill="none" class="opacity-50"/>
+
+          <!-- Bar -->
+          <circle id="gauge-arc" cx="120" cy="120" r="100" stroke="#10b981" stroke-width="16" fill="none"
+            stroke-linecap="round" stroke-dasharray="628.32" stroke-dashoffset="628.32" class="gauge-arc"
+            style="filter: drop-shadow(0 0 10px rgba(16,185,129,0.5));"/>
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div class="text-[9px] text-gray-400 font-semibold uppercase tracking-[0.15em] mb-0.5">Toxicity Level</div>
+          <div class="flex items-start leading-none ml-2">
+            <span id="tox-val" class="font-black text-white tracking-tighter" style="font-size:52px;font-family:'Space Mono',monospace;line-height:1">0</span>
+            <span class="text-xl font-bold text-gray-500 mt-2" style="font-family:'Space Mono',monospace">%</span>
+          </div>
+          <div id="tox-badge" class="mt-2 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase border transition-all bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[inset_0_0_8px_rgba(16,185,129,0.1)]">SAFE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk factor button row -->
+    <div class="px-3 pb-2 shrink-0 flex items-center gap-2">
+      <button id="risk-btn" onclick="toggleRiskPopover(event)"
+        class="flex items-center gap-2 bg-[#0e0e0e] border border-[#222] rounded-xl px-3 py-2 text-xs text-gray-400 transition-all btn-press shadow-sm hover:border-[#333] hover:bg-[#111]">
+        <span class="text-[11px] opacity-80">⚠</span>
+        <span class="font-semibold tracking-[0.05em]">リスク因子</span>
+        <span id="risk-count-badge" class="hidden bg-red-950/50 text-red-400 border border-red-500/30 rounded-full px-2 py-0.5 text-[9px] font-bold shadow-[inset_0_0_4px_rgba(239,68,68,0.2)]"></span>
+      </button>
+    </div>
+
+    <!-- Risk alert (shown when any selected) -->
+    <div id="risk-alert" class="hidden px-3 pb-2 shrink-0">
+      <div class="bg-red-950/20 border border-red-500/20 rounded-xl p-3 glass-panel">
+        <div class="text-[9px] font-bold text-red-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]"></span>
+          高リスク患者 — 文献的注意事項
+        </div>
+        <div id="risk-alert-body" class="text-[11px] text-red-300/90 space-y-1.5 leading-relaxed font-medium"></div>
+        <div class="text-[9px] font-semibold text-red-500/60 mt-2 pt-2 border-t border-red-500/10 tracking-wide">
+          Toxicity % は標準用量の参考値。これらの因子では同一用量でも中毒閾値が低下します。
+        </div>
+      </div>
+    </div>
+
+    <!-- Drug list -->
+    <div class="flex-1 overflow-y-auto px-3 pb-4 space-y-2" id="drug-list">
+      <div id="drug-empty" class="flex flex-col items-center gap-3 py-2">
+        <div class="flex items-center gap-2 bg-[#0e0e0e] border border-[#222] rounded-2xl px-4 py-3 glass-panel shadow-sm">
+          <span class="text-emerald-500 text-base drop-shadow-[0_0_6px_rgba(16,185,129,0.5)]">☰</span>
+          <span class="text-xs font-semibold tracking-wide text-gray-400">左のメニューから薬剤を追加</span>
+          <span class="text-gray-500 text-xs font-bold">→</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TAB: SYMPTOMS -->
+  <div id="tab-symptoms" class="tab-panel flex-1 overflow-y-auto p-4 space-y-3">
+    <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.15em]">LAST Symptoms Quick Ref</p>
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] divide-y divide-[#1c1c1c] overflow-hidden glass-panel">
+      <div class="p-4">
+        <div class="text-[10px] font-mono font-bold text-yellow-400 tracking-widest mb-2 drop-shadow-[0_0_4px_rgba(250,204,21,.3)]">EARLY — CNS Excitation</div>
+        <ul class="text-xs font-medium text-gray-300 space-y-1.5">
+          <li><span class="text-yellow-600 mr-2 opacity-80">•</span>口周囲・舌のしびれ</li>
+          <li><span class="text-yellow-600 mr-2 opacity-80">•</span>金属味・耳鳴り・めまい</li>
+          <li><span class="text-yellow-600 mr-2 opacity-80">•</span>視覚・聴覚異常</li>
+          <li><span class="text-yellow-600 mr-2 opacity-80">•</span>不安・興奮・錯乱</li>
+        </ul>
+      </div>
+      <div class="p-4 bg-gradient-to-b from-transparent to-[#110500]/30">
+        <div class="text-[10px] font-mono font-bold text-orange-400 tracking-widest mb-2 drop-shadow-[0_0_4px_rgba(251,146,60,.3)]">MID — CNS Depression</div>
+        <ul class="text-xs font-medium text-gray-300 space-y-1.5">
+          <li><span class="text-orange-600 mr-2 opacity-80">•</span>意識消失</li>
+          <li><span class="text-orange-600 mr-2 opacity-80">•</span>筋肉攣縮・全身性痙攣</li>
+        </ul>
+      </div>
+      <div class="p-4 bg-gradient-to-b from-[#110500]/30 to-red-950/20">
+        <div class="text-[10px] font-mono font-bold text-red-500 tracking-widest mb-2 drop-shadow-[0_0_4px_rgba(239,68,68,.4)]">LATE — Cardiovascular</div>
+        <ul class="text-xs font-medium text-gray-300 space-y-1.5">
+          <li><span class="text-red-600 mr-2 opacity-80">•</span>QRS延長・伝導障害</li>
+          <li><span class="text-red-600 mr-2 opacity-80">•</span>徐脈・低血圧</li>
+          <li><span class="text-red-600 mr-2 opacity-80">•</span>VT / VF / 心停止</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] p-4 glass-panel">
+      <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.15em] mb-2">High-Risk Situations</div>
+      <ul class="text-xs font-medium text-gray-400 space-y-1.5">
+        <li>• 大量・急速投与、血管内誤注入</li>
+        <li>• 高齢・低体重・肝機能障害・妊婦</li>
+        <li>• アシドーシス / 低酸素 / 高CO₂（痙攣閾値↓）</li>
+        <li>• Bupivacaine は特に心毒性が強い</li>
+      </ul>
+    </div>
+
+    <!-- Gasteiger 2026 note -->
+    <div class="bg-[#0c0a06] rounded-2xl border border-amber-500/20 p-4 shadow-[inset_0_1px_0_rgba(251,191,36,0.05)]">
+      <div class="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+        <span class="opacity-80">⚗</span> LA混合使用に関する注意（Gasteiger 2026）
+      </div>
+      <p class="text-xs font-medium text-gray-400 leading-relaxed">複数の局麻薬・補助薬の混合（例：Lidocaine + NaHCO₃）では結晶析出が確認されており、全身毒性への影響は不明です。特に脊髄・硬膜外へのルーチン混合使用は推奨されません。</p>
+      <p class="text-[10px] font-semibold text-gray-500 mt-2 tracking-wide font-mono opacity-80">Anesthesiology 144(1):177-190, 2026 · PMID 41363872</p>
+    </div>
+  </div>
+
+  <!-- TAB: LIPID -->
+  <div id="tab-lipid" class="tab-panel flex-1 overflow-y-auto p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <p class="text-[10px] font-semibold text-gray-500 uppercase tracking-[0.15em]">20% Lipid Emulsion Rescue</p>
+      <span class="text-[10px] text-gray-500 font-semibold tracking-wide font-mono bg-[#111] px-2 py-0.5 rounded border border-[#222]">pt. <span id="lipid-wt" class="text-emerald-400">60</span> kg</span>
+    </div>
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] p-4 glass-panel">
+      <div class="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2 text-[#38bdf8]">Step 1 — 気道確保</div>
+      <ul class="text-xs font-medium text-gray-300 space-y-1.5">
+        <li>• 酸素投与 / 必要なら挿管</li>
+        <li>• 痙攣 → Benzodiazepine 優先</li>
+      </ul>
+    </div>
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] border-l-[3px] border-l-blue-500 p-4 glass-panel shadow-[inset_16px_0_32px_-16px_rgba(59,130,246,0.1)]">
+      <div class="text-[10px] font-mono font-bold text-blue-400 tracking-[0.1em] mb-3">INITIAL BOLUS</div>
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-white text-[15px] tracking-tight font-black" style="font-family:'Space Mono',monospace">1.5 mL/kg</div>
+          <div class="text-xs font-semibold text-gray-400 mt-1">イントラリポス20% — 2〜3分で静注</div>
+          <div class="text-[10px] font-medium text-gray-500 mt-1 opacity-90">循環回復なければ最大2回繰り返し</div>
+        </div>
+        <div class="text-right">
+          <div class="text-2xl font-black text-emerald-400 tracking-tighter drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" style="font-family:'Space Mono',monospace" id="lipid-bolus-ml">90</div>
+          <div class="text-[10px] font-semibold text-gray-500">mL</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] p-4 glass-panel">
+      <div class="text-[10px] font-mono font-bold text-gray-300 tracking-[0.1em] mb-3">MAINTENANCE INFUSION</div>
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-white text-[15px] tracking-tight font-black" style="font-family:'Space Mono',monospace">0.25 mL/kg/min</div>
+          <div class="text-xs font-semibold text-gray-400 mt-1">循環安定まで継続（≥15分）</div>
+        </div>
+        <div class="text-right">
+          <div class="text-lg font-black text-blue-400 tracking-tighter drop-shadow-[0_0_8px_rgba(56,189,248,0.3)]" style="font-family:'Space Mono',monospace" id="lipid-maint-ml">15.0</div>
+          <div class="text-[10px] font-semibold text-gray-500">mL/min</div>
+        </div>
+      </div>
+      <div class="bg-[#080808] rounded-xl border border-[#1a1a1a] px-3 py-2.5 flex items-center justify-between deep-inset">
+        <div>
+          <span class="text-[9px] text-gray-400 uppercase tracking-[0.1em] font-bold">ポンプ設定</span>
+          <p class="text-[9px] font-medium text-gray-500 mt-0.5">シリンジ/輸液ポンプ</p>
+        </div>
+        <div class="flex items-baseline gap-1">
+          <span class="text-xl font-black text-white tracking-tighter text-shadow-sm" style="font-family:'Space Mono',monospace" id="lipid-pump-mlhr">900</span>
+          <span class="text-[10px] font-semibold text-gray-500">mL/hr</span>
+        </div>
+      </div>
+    </div>
+    <div class="bg-[#0e0e0e] rounded-2xl border border-[#222] p-4 glass-panel">
+      <div class="flex items-baseline justify-between">
+        <div>
+          <div class="text-[10px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-1">Max Total</div>
+          <div class="text-white text-[13px] tracking-tight font-black" style="font-family:'Space Mono',monospace">12 mL/kg</div>
+        </div>
+        <div class="text-right">
+          <div class="text-xl font-black text-gray-400 tracking-tighter" style="font-family:'Space Mono',monospace" id="lipid-max-ml">720</div>
+          <div class="text-[10px] font-semibold text-gray-500">mL</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-[#0d0707] rounded-2xl border border-red-500/20 p-4 shadow-[inset_0_1px_0_rgba(239,68,68,0.05)]">
+      <div class="text-[10px] font-bold text-red-500 uppercase tracking-[0.15em] mb-2 flex items-center gap-1.5">
+        <span class="opacity-80">⚠</span> 注意
+      </div>
+      <ul class="text-xs font-medium text-gray-400 space-y-1.5">
+        <li>• Propofol は代用不可（濃度不足）</li>
+        <li>• ACLS継続（脂質注入と並行）</li>
+        <li>• 最寄りの専門施設へ連絡</li>
+      </ul>
+    </div>
+    <p class="text-[9px] font-semibold tracking-wide text-gray-600 text-center pb-2">ASRA LAST Checklist 2020</p>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ============================================================
+// DATA
+// ============================================================
+const DRUGS = [
+  { id:'lidocaine',       name:'Lidocaine',       jp:'リドカイン',       plain:3,   epi:7,   concs:[0.5,1.0,1.5,2.0],         defConc:1.0 },
+  { id:'bupivacaine',     name:'Bupivacaine',     jp:'ブピバカイン',     plain:2,   epi:3,   concs:[0.25,0.5],                 defConc:0.5 },
+  { id:'ropivacaine',     name:'Ropivacaine',     jp:'ロピバカイン',     plain:3,   epi:3,   concs:[0.2,0.375,0.5,0.75,1.0],  defConc:0.5 },
+  { id:'mepivacaine',     name:'Mepivacaine',     jp:'メピバカイン',     plain:4.4, epi:4.4, concs:[1.0,1.5,2.0],             defConc:1.0 },
+  { id:'levobupivacaine', name:'Levobupivacaine', jp:'レボブピバカイン', plain:2,   epi:3,   concs:[0.25,0.5,0.75],           defConc:0.5 },
+  { id:'prilocaine',      name:'Prilocaine',      jp:'プリロカイン',     plain:6,   epi:8,   concs:[0.5,1.0,2.0,3.0],         defConc:1.0 },
+];
+
+const RISK_FACTORS = [
+  { id:'pregnancy', label:'妊婦',
+    msg:'プロゲステロンによる神経感受性増大・α₁酸性糖タンパク濃度低下により、標準用量でも毒性リスクが高まります。' },
+  { id:'elderly',   label:'高齢者（65歳↑）',
+    msg:'肝血流量低下・血漿タンパク結合率変化によりアミド型LAクリアランス低下。反復投与での蓄積に注意。' },
+  { id:'liver',     label:'肝機能障害',
+    msg:'アミド型LAは主に肝代謝。機能低下時は半減期延長・蓄積リスク増大。' },
+  { id:'cardiac',   label:'心疾患',
+    msg:'既存の伝導障害・低EFではLAの心毒性（特にBupivacaine）が顕在化しやすい。心電図モニタリング必須。' },
+  { id:'acidosis',  label:'アシドーシス / 低酸素 / 高CO₂',
+    msg:'酸塩基異常・低酸素・高炭酸ガス血症は痙攣閾値を低下させ、心筋毒性を増強。脳血流増加により脳内LA濃度も上昇します。' },
+  { id:'hypoalb',   label:'低アルブミン血症',
+    msg:'タンパク結合型LAの減少により遊離分画が増加。同一用量でも実効血中濃度が上昇します。' },
+  { id:'renal',     label:'腎機能障害',
+    msg:'一部代謝物の排泄遅延・尿毒症性タンパク結合変化により、遊離分画が増加することがあります。' },
+];
+
+const fmtC = c => c.toString().includes('.') ? c.toString() : c.toFixed(1);
+
+// ============================================================
+// STATE
+// ============================================================
+const S = { weight:60, drugs:[], risks:new Set() };
+
+// ============================================================
+// TABS
+// ============================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    closeAllPopovers();
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle('text-emerald-400', on);
+      b.classList.toggle('border-emerald-500', on);
+      b.classList.toggle('text-gray-500', !on);
+      b.classList.toggle('border-transparent', !on);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+  });
+});
+
+function closeAllPopovers() {
+  closeWtPopover();
+  closeRiskPopover();
+}
+
+// ============================================================
+// DRAWER
+// ============================================================
+function openDrawer() {
+  closeAllPopovers();
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('dim').classList.add('show');
+  document.getElementById('dim').onclick = closeDrawer;
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('dim').classList.remove('show');
+}
+
+function renderSelector() {
+  const el = document.getElementById('drug-selector');
+  el.innerHTML = DRUGS.map(d => {
+    const active = S.drugs.some(x => x.id === d.id);
+    return `
+      <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors btn-press
+        ${active ? 'bg-emerald-900/10 border border-emerald-500/30 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]' : 'bg-[#121212] border border-[#222] hover:border-[#333] hover:bg-[#151515]'}">
+        <input type="checkbox" ${active ? 'checked' : ''}
+          onchange="toggleDrug('${d.id}',this.checked)"
+          class="w-4 h-4 rounded accent-emerald-500 shadow-sm shrink-0 drop-shadow-[0_0_4px_rgba(16,185,129,0.3)]">
+        <div class="min-w-0">
+          <div class="text-sm font-bold text-gray-100 tracking-wide">${d.name}</div>
+          <div class="text-[10px] text-gray-500 font-mono font-medium tracking-tight mt-0.5">${d.jp} · max ${d.plain}mg/kg</div>
+        </div>
+      </label>`;
+  }).join('');
+}
+renderSelector();
+
+function toggleDrug(id, add) {
+  if (add) {
+    const d = DRUGS.find(x => x.id === id);
+    S.drugs.push({ id, hasEpi:false, conc:d.defConc, volume:0, open:false });
+  } else {
+    S.drugs = S.drugs.filter(x => x.id !== id);
+  }
+  renderSelector();
+  renderDrugList();
+  calculate();
+}
+
+// ============================================================
+// RISK FACTORS
+// ============================================================
+let _riskPopOpen = false;
+
+function renderRiskCheckList() {
+  document.getElementById('risk-check-list').innerHTML = RISK_FACTORS.map(r => {
+    const on = S.risks.has(r.id);
+    return `
+      <label class="flex items-start gap-3 p-2.5 rounded-xl cursor-pointer transition-colors btn-press
+        ${on ? 'bg-red-950/20 border border-red-500/30' : 'bg-[#0a0a0a] border border-[#222] hover:border-[#333] hover:bg-[#111]'}">
+        <input type="checkbox" ${on ? 'checked' : ''}
+          onchange="toggleRisk('${r.id}',this.checked)"
+          class="w-4 h-4 mt-0.5 rounded accent-red-500 shrink-0 drop-shadow-[0_0_4px_rgba(239,68,68,0.3)]">
+        <div>
+          <div class="text-xs font-bold tracking-wide ${on ? 'text-red-300' : 'text-gray-300'}">${r.label}</div>
+          <div class="text-[10px] font-medium text-gray-400 mt-1 leading-relaxed opacity-90">${r.msg}</div>
+        </div>
+      </label>`;
+  }).join('');
+}
+
+function toggleRisk(id, on) {
+  on ? S.risks.add(id) : S.risks.delete(id);
+  renderRiskCheckList();
+  updateRiskUI();
+}
+
+function updateRiskUI() {
+  const count = S.risks.size;
+  const badge = document.getElementById('risk-count-badge');
+  const btn = document.getElementById('risk-btn');
+  const alert = document.getElementById('risk-alert');
+  const body = document.getElementById('risk-alert-body');
+
+  if (count > 0) {
+    badge.textContent = count + '件';
+    badge.classList.remove('hidden');
+    btn.classList.add('border-red-500/40', 'text-red-400', 'bg-red-950/20');
+    btn.classList.remove('border-[#222]', 'text-gray-400', 'bg-[#0e0e0e]');
+    alert.classList.remove('hidden');
+    const active = RISK_FACTORS.filter(r => S.risks.has(r.id));
+    body.innerHTML = active.map(r => `<p><span class="opacity-70 mr-1">•</span> <strong class="text-red-200 font-bold">${r.label}</strong>：${r.msg}</p>`).join('');
+  } else {
+    badge.classList.add('hidden');
+    btn.classList.remove('border-red-500/40', 'text-red-400', 'bg-red-950/20');
+    btn.classList.add('border-[#222]', 'text-gray-400', 'bg-[#0e0e0e]');
+    alert.classList.add('hidden');
+  }
+}
+
+function toggleRiskPopover(e) {
+  e.stopPropagation();
+  if (_riskPopOpen) { closeRiskPopover(); return; }
+  closeWtPopover();
+  renderRiskCheckList();
+  const btn = document.getElementById('risk-btn');
+  const rect = btn.getBoundingClientRect();
+  const pop = document.getElementById('risk-popover');
+  const appRect = document.getElementById('app').getBoundingClientRect();
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.left = (appRect.left + 12) + 'px';
+  pop.style.right = (window.innerWidth - appRect.right + 12) + 'px';
+  pop.classList.remove('hidden');
+  _riskPopOpen = true;
+}
+
+function closeRiskPopover() {
+  document.getElementById('risk-popover').classList.add('hidden');
+  _riskPopOpen = false;
+}
+
+renderRiskCheckList();
+
+// ============================================================
+// DRUG LIST
+// ============================================================
+function renderDrugList() {
+  const container = document.getElementById('drug-list');
+  const empty = document.getElementById('drug-empty');
+  empty.style.display = S.drugs.length ? 'none' : '';
+  container.querySelectorAll('.drug-item').forEach(el => el.remove());
+
+  S.drugs.forEach(ds => {
+    const d = DRUGS.find(x => x.id === ds.id);
+    const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
+    const mg = ds.volume * ds.conc * 10;
+    const pct = maxMg > 0 ? Math.min(mg / maxMg * 100, 100) : 0;
+    const barColor = pct < 50 ? '#10b981' : pct < 80 ? '#eab308' : '#ef4444';
+
+    const el = document.createElement('div');
+    el.className = 'drug-item bg-[#0e0e0e] border border-[#222] rounded-2xl glass-panel overflow-hidden transition-all duration-300' + (ds.open ? ' open' : '');
+    el.dataset.id = ds.id;
+    el.innerHTML = `
+      <div class="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-white/[0.02] transition-colors" onclick="toggleAccordion('${ds.id}')">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-1.5">
+            <span class="text-sm font-bold text-gray-100 tracking-wide">${d.name}</span>
+            <span class="text-[10px] font-semibold text-gray-500">${d.jp}</span>
+          </div>
+          <div class="flex items-center gap-2 mt-2">
+            <div class="flex-1 h-1.5 bg-[#121212] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%;background:${barColor};box-shadow:0 0 8px ${barColor}b3"></div>
+            </div>
+            <span class="text-[10px] font-mono font-bold text-gray-400 tracking-tight shrink-0">${mg.toFixed(1)} / <span class="text-gray-600">${maxMg.toFixed(0)}</span> mg</span>
+          </div>
+        </div>
+        <svg class="chevron w-4 h-4 text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+      <div class="drug-detail border-t border-[#1a1a1a] px-4 py-3 space-y-3 bg-[#0a0a0a]">
+        <div class="flex bg-[#050505] rounded-xl p-1 border border-[#1a1a1a] shadow-[inset_0_1px_4px_rgba(0,0,0,0.4)]">
+          <button onclick="setEpi('${ds.id}',false)" class="flex-1 py-1.5 text-xs font-bold rounded-lg transition-all btn-press ${!ds.hasEpi?'bg-[#1e1e1e] text-white shadow-sm border border-[#333]':'text-gray-500 border border-transparent hover:text-gray-400'}">Plain</button>
+          <button onclick="setEpi('${ds.id}',true)" class="flex-1 py-1.5 text-xs font-bold rounded-lg transition-all btn-press ${ds.hasEpi?'bg-[#1e1e1e] text-white shadow-sm border border-[#333]':'text-gray-500 border border-transparent hover:text-gray-400'}">＋ Epi</button>
+        </div>
+        <div>
+          <div class="text-[9px] font-semibold text-gray-500 uppercase tracking-[0.1em] mb-1.5 ml-0.5">Concentration (%)</div>
+          <div class="flex flex-wrap gap-1.5">
+            ${d.concs.map(c => `
+              <button onclick="setConc('${ds.id}',${c})"
+                class="px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all btn-press
+                ${ds.conc===c?'bg-blue-600/20 border border-blue-500 text-blue-400 shadow-[inset_0_0_8px_rgba(59,130,246,0.2)]':'bg-[#141414] border border-[#222] text-gray-500 hover:border-[#333] hover:text-gray-300'}">${fmtC(c)}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="flex items-center justify-between bg-[#050505] rounded-xl border border-[#1a1a1a] focus-within:border-emerald-500/50 transition-colors px-4 py-3 deep-inset">
+          <div>
+            <div class="text-[9px] font-semibold text-gray-500 uppercase tracking-[0.1em]">Total Volume</div>
+            <div class="text-xs font-mono font-bold text-gray-400 tracking-tight mt-0.5" id="mgprev-${ds.id}">${mg.toFixed(1)} mg</div>
+          </div>
+          <div class="flex items-baseline gap-1.5">
+            <input type="number" value="${ds.volume||''}" placeholder="0" min="0" step="0.5"
+              class="bg-transparent text-4xl font-black text-white w-20 text-right outline-none tracking-tighter"
+              style="font-family:'Space Mono',monospace"
+              oninput="setVolume('${ds.id}',parseFloat(this.value)||0)">
+            <span class="text-[13px] text-gray-500 font-mono font-semibold tracking-tight pb-1">ml</span>
+          </div>
+        </div>
+        <button onclick="removeDrug('${ds.id}')" class="w-full text-[10px] text-gray-600 font-bold hover:text-red-400 transition-colors py-1 uppercase tracking-widest text-center btn-press">削除</button>
+      </div>`;
+    container.appendChild(el);
+  });
+}
+
+function toggleAccordion(id) {
+  const ds = S.drugs.find(x => x.id === id);
+  ds.open = !ds.open;
+  document.querySelector(`.drug-item[data-id="${id}"]`)?.classList.toggle('open', ds.open);
+}
+
+function setEpi(id, val) {
+  S.drugs.find(x => x.id === id).hasEpi = val;
+  renderDrugList();
+  calculate();
+  setTimeout(() => { if (S.drugs.find(x=>x.id===id)?.open) document.querySelector(`.drug-item[data-id="${id}"]`)?.classList.add('open'); }, 0);
+}
+
+function setConc(id, val) {
+  const ds = S.drugs.find(x => x.id === id);
+  ds.conc = val; ds.open = true;
+  renderDrugList();
+  calculate();
+  setTimeout(() => document.querySelector(`.drug-item[data-id="${id}"]`)?.classList.add('open'), 0);
+}
+
+function setVolume(id, vol) {
+  const ds = S.drugs.find(x => x.id === id);
+  ds.volume = vol;
+  const d = DRUGS.find(x => x.id === id);
+  const mg = vol * ds.conc * 10;
+  const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
+  const pct = maxMg > 0 ? Math.min(mg / maxMg * 100, 100) : 0;
+  const prev = document.getElementById('mgprev-' + id);
+  if (prev) prev.textContent = mg.toFixed(1) + ' mg';
+  const item = document.querySelector(`.drug-item[data-id="${id}"]`);
+  if (item) {
+    const bar = item.querySelector('.h-full.rounded-full');
+    if (bar) {
+      bar.style.width = pct + '%';
+      const bc = pct<50?'#10b981':pct<80?'#eab308':'#ef4444';
+      bar.style.background = bc;
+      bar.style.boxShadow = '0 0 8px ' + bc + 'b3';
+    }
+    const lbl = item.querySelector('.font-mono.text-gray-400.shrink-0');
+    if (lbl) lbl.innerHTML = mg.toFixed(1)+' / <span class="text-gray-600">'+maxMg.toFixed(0)+'</span> mg';
+  }
+  calculate();
+}
+
+function removeDrug(id) {
+  S.drugs = S.drugs.filter(x => x.id !== id);
+  renderSelector();
+  renderDrugList();
+  calculate();
+}
+
+// ============================================================
+// CALCULATE
+// ============================================================
+const CIRC = 628.32;
+
+function calculate() {
+  let frac = 0;
+  if (S.weight > 0) {
+    S.drugs.forEach(ds => {
+      const d = DRUGS.find(x => x.id === ds.id);
+      const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
+      const mg = ds.volume * ds.conc * 10;
+      if (maxMg > 0) frac += mg / maxMg;
+    });
+  }
+  updateGauge(frac * 100);
+}
+
+function updateGauge(pct) {
+  const arc = document.getElementById('gauge-arc');
+  const badge = document.getElementById('tox-badge');
+  const val = document.getElementById('tox-val');
+  animateNum(val, parseFloat(val.textContent), pct, 450);
+  arc.style.strokeDashoffset = CIRC - (Math.min(pct,100)/100*CIRC);
+  if (pct < 50) {
+    arc.style.stroke = '#10b981';
+    arc.style.filter = 'drop-shadow(0 0 10px rgba(16,185,129,0.5))';
+    badge.className = 'mt-2 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase border transition-all bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[inset_0_0_8px_rgba(16,185,129,0.1)]';
+    badge.textContent = 'SAFE';
+  } else if (pct < 80) {
+    arc.style.stroke = '#eab308';
+    arc.style.filter = 'drop-shadow(0 0 10px rgba(234,179,8,0.5))';
+    badge.className = 'mt-2 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase border transition-all bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-[inset_0_0_8px_rgba(234,179,8,0.1)]';
+    badge.textContent = 'CAUTION';
+  } else {
+    arc.style.stroke = '#ef4444';
+    arc.style.filter = 'drop-shadow(0 0 12px rgba(239,68,68,0.6))';
+    badge.className = 'mt-2 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase border transition-all bg-red-500/10 text-red-400 border-red-500/30 shadow-[inset_0_0_8px_rgba(239,68,68,0.1)] animate-pulse';
+    badge.textContent = pct > 100 ? 'OVERDOSE' : 'DANGER';
+  }
+}
+
+function animateNum(el, from, to, dur) {
+  let t0 = null;
+  const step = ts => {
+    if (!t0) t0 = ts;
+    const p = Math.min((ts-t0)/dur, 1);
+    el.textContent = Math.round(from + (1-Math.pow(1-p,3))*(to-from));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ============================================================
+// LIPID DOSES
+// ============================================================
+function updateLipidDoses() {
+  const w = S.weight;
+  document.getElementById('lipid-wt').textContent = w;
+  document.getElementById('lipid-bolus-ml').textContent = Math.round(1.5 * w);
+  document.getElementById('lipid-maint-ml').textContent = (0.25 * w).toFixed(1);
+  document.getElementById('lipid-pump-mlhr').textContent = Math.round(0.25 * w * 60);
+  document.getElementById('lipid-max-ml').textContent = Math.round(12 * w);
+}
+updateLipidDoses();
+
+// ============================================================
+// WEIGHT
+// ============================================================
+let _wtPopOpen = false;
+let _dragY = null, _dragW = null, _moved = false;
+
+function toggleWtPopover(e) {
+  e.stopPropagation();
+  if (_moved) { _moved = false; return; }
+  if (_wtPopOpen) { closeWtPopover(); return; }
+  closeRiskPopover();
+  const btn = document.getElementById('weight-btn');
+  const rect = btn.getBoundingClientRect();
+  const appRect = document.getElementById('app').getBoundingClientRect();
+  const pop = document.getElementById('wt-popover');
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.right = (window.innerWidth - appRect.right + 12) + 'px';
+  pop.classList.remove('hidden');
+  document.getElementById('wt-pop-input').value = S.weight;
+  _wtPopOpen = true;
+}
+
+function closeWtPopover() {
+  document.getElementById('wt-popover').classList.add('hidden');
+  _wtPopOpen = false;
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('wt-popover').contains(e.target) &&
+      !document.getElementById('weight-btn').contains(e.target)) closeWtPopover();
+  if (!document.getElementById('risk-popover').contains(e.target) &&
+      !document.getElementById('risk-btn').contains(e.target)) closeRiskPopover();
+});
+
+function updatePresetHighlight(w) {
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    const isActive = parseInt(btn.dataset.preset, 10) === w;
+    if (isActive) {
+      btn.classList.add('border-emerald-500/30', 'text-emerald-400', 'hover:border-emerald-400', 'shadow-[inset_0_0_8px_rgba(16,185,129,0.1)]');
+      btn.classList.remove('text-gray-500', 'hover:border-[#333]', 'hover:text-gray-300');
+    } else {
+      btn.classList.remove('border-emerald-500/30', 'text-emerald-400', 'hover:border-emerald-400', 'shadow-[inset_0_0_8px_rgba(16,185,129,0.1)]');
+      btn.classList.add('text-gray-500', 'hover:border-[#333]', 'hover:text-gray-300');
+    }
+  });
+}
+
+function setWtDirect(w) {
+  if (w < 1 || w > 250) return;
+  S.weight = w;
+  document.getElementById('wt-display').textContent = w;
+  updatePresetHighlight(w);
+  updateLipidDoses(); renderDrugList(); calculate();
+}
+
+function adjustWt(delta) {
+  const w = Math.max(1, Math.min(250, S.weight + delta));
+  S.weight = w;
+  document.getElementById('wt-display').textContent = w;
+  document.getElementById('wt-pop-input').value = w;
+  updatePresetHighlight(w);
+  updateLipidDoses(); renderDrugList(); calculate();
+}
+
+function presetWt(w) {
+  S.weight = w;
+  document.getElementById('wt-display').textContent = w;
+  document.getElementById('wt-pop-input').value = w;
+  updatePresetHighlight(w);
+  updateLipidDoses(); renderDrugList(); calculate();
+  closeWtPopover();
+}
+
+const wBtn = document.getElementById('weight-btn');
+wBtn.addEventListener('pointerdown', e => {
+  _dragY = e.clientY; _dragW = S.weight; _moved = false;
+  wBtn.setPointerCapture(e.pointerId);
+  document.body.classList.add('wdragging');
+});
+wBtn.addEventListener('pointermove', e => {
+  if (_dragY === null) return;
+  const delta = _dragY - e.clientY;
+  if (Math.abs(delta) > 5) _moved = true;
+  const newW = Math.max(1, Math.min(250, Math.round(_dragW + delta / 3.5)));
+  if (newW !== S.weight) {
+    S.weight = newW;
+    document.getElementById('wt-display').textContent = newW;
+    if (_wtPopOpen) document.getElementById('wt-pop-input').value = newW;
+    updateLipidDoses(); calculate();
+  }
+});
+wBtn.addEventListener('pointerup', () => {
+  document.body.classList.remove('wdragging');
+  if (_moved) renderDrugList();
+  _dragY = null;
+});
+</script>
+</body>
+</html>

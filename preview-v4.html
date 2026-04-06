@@ -72,7 +72,7 @@
       transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
     }
     .drug-item.open .drug-detail {
-      max-height: 400px;
+      max-height: 520px;
       opacity: 1;
       padding-top: 0.75rem !important; /* matches original py-3 */
       padding-bottom: 0.75rem !important;
@@ -565,12 +565,30 @@ function renderDrugList() {
   empty.style.display = S.drugs.length ? 'none' : '';
   container.querySelectorAll('.drug-item').forEach(el => el.remove());
 
+  // Pre-compute total fraction for remaining-safe-dose display
+  let totalFrac = 0;
+  if (S.weight > 0) {
+    S.drugs.forEach(ds => {
+      const d = DRUGS.find(x => x.id === ds.id);
+      const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
+      const mg = ds.volume * ds.conc * 10;
+      if (maxMg > 0) totalFrac += mg / maxMg;
+    });
+  }
+  const budgetLeft = Math.max(0, 1 - totalFrac);
+
   S.drugs.forEach(ds => {
     const d = DRUGS.find(x => x.id === ds.id);
     const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
     const mg = ds.volume * ds.conc * 10;
     const pct = maxMg > 0 ? Math.min(mg / maxMg * 100, 100) : 0;
     const barColor = pct < 50 ? '#10b981' : pct < 80 ? '#eab308' : '#ef4444';
+
+    const remainMg = budgetLeft * maxMg;
+    const remainMl = ds.conc > 0 ? remainMg / (ds.conc * 10) : 0;
+    const remainHTML = totalFrac >= 1
+      ? '<span style="color:#f87171">投与不可</span>'
+      : `あと <strong style="color:#6ee7b7">${remainMg.toFixed(0)}</strong> mg（= <span style="color:#93c5fd">${remainMl.toFixed(1)}</span> mL）`;
 
     const el = document.createElement('div');
     el.className = 'drug-item bg-[#0e0e0e] border border-[#222] rounded-2xl glass-panel overflow-hidden transition-all duration-300' + (ds.open ? ' open' : '');
@@ -620,6 +638,10 @@ function renderDrugList() {
               oninput="setVolume('${ds.id}',parseFloat(this.value)||0)">
             <span class="text-[13px] text-gray-500 font-mono font-semibold tracking-tight pb-1">ml</span>
           </div>
+        </div>
+        <div class="flex items-center justify-between py-2 px-0.5 border-t border-[#151515]">
+          <span class="text-[9px] font-semibold text-gray-600 uppercase tracking-[0.1em]">残り安全域</span>
+          <span id="remaining-${ds.id}" class="text-[11px] font-mono tracking-tight">${remainHTML}</span>
         </div>
         <button onclick="removeDrug('${ds.id}')" class="w-full text-[10px] text-gray-600 font-bold hover:text-red-400 transition-colors py-1 uppercase tracking-widest text-center btn-press">削除</button>
       </div>`;
@@ -695,6 +717,24 @@ function calculate() {
     });
   }
   updateGauge(frac * 100);
+  updateAllRemaining(frac);
+}
+
+function updateAllRemaining(totalFrac) {
+  const budgetLeft = Math.max(0, 1 - totalFrac);
+  S.drugs.forEach(ds => {
+    const el = document.getElementById('remaining-' + ds.id);
+    if (!el) return;
+    const d = DRUGS.find(x => x.id === ds.id);
+    const maxMg = (ds.hasEpi ? d.epi : d.plain) * S.weight;
+    const remainMg = budgetLeft * maxMg;
+    const remainMl = ds.conc > 0 ? remainMg / (ds.conc * 10) : 0;
+    if (totalFrac >= 1) {
+      el.innerHTML = '<span style="color:#f87171">投与不可</span>';
+    } else {
+      el.innerHTML = `あと <strong style="color:#6ee7b7">${remainMg.toFixed(0)}</strong> mg（= <span style="color:#93c5fd">${remainMl.toFixed(1)}</span> mL）`;
+    }
+  });
 }
 
 function updateGauge(pct) {

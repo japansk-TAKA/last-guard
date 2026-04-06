@@ -118,6 +118,9 @@
       <button onclick="closeDrawer()" class="text-gray-500 hover:text-white transition-colors btn-press text-lg leading-none">✕</button>
     </div>
     <div id="drug-selector" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+    <div class="px-4 py-3 border-t border-[#151515] shrink-0">
+      <p class="text-[9px] text-gray-600 leading-relaxed">日本国内で承認・汎用されるアミド型局所麻酔薬を掲載。商品名は識別のため記載（特定製品の推奨ではありません）。用量はASRA 2020に準拠。</p>
+    </div>
   </div>
 
   <!-- WEIGHT POPOVER (fixed) -->
@@ -237,7 +240,7 @@
     </div>
 
     <!-- Drug list -->
-    <div class="flex-1 overflow-y-auto px-3 pb-4 space-y-2" id="drug-list">
+    <div class="flex-1 overflow-y-auto px-3 pb-2 space-y-2" id="drug-list">
       <div id="drug-empty" class="flex flex-col items-center gap-3 py-2">
         <div class="flex items-center gap-2 bg-[#0e0e0e] border border-[#222] rounded-2xl px-4 py-3 glass-panel shadow-sm">
           <span class="text-emerald-500 text-base drop-shadow-[0_0_6px_rgba(16,185,129,0.5)]">☰</span>
@@ -246,6 +249,7 @@
         </div>
       </div>
     </div>
+    <p class="text-[8px] text-gray-700 text-center py-1.5 shrink-0 tracking-wide">本ツールは臨床参照目的です。実際の投与判断は担当医師の責任において行ってください。</p>
 
   </div>
 
@@ -381,12 +385,11 @@
 // DATA
 // ============================================================
 const DRUGS = [
-  { id:'lidocaine',       name:'Lidocaine',       jp:'リドカイン',       plain:3,   epi:7,   concs:[0.5,1.0,1.5,2.0],         defConc:1.0 },
-  { id:'bupivacaine',     name:'Bupivacaine',     jp:'ブピバカイン',     plain:2,   epi:3,   concs:[0.25,0.5],                 defConc:0.5 },
-  { id:'ropivacaine',     name:'Ropivacaine',     jp:'ロピバカイン',     plain:3,   epi:3,   concs:[0.2,0.375,0.5,0.75,1.0],  defConc:0.5 },
-  { id:'mepivacaine',     name:'Mepivacaine',     jp:'メピバカイン',     plain:4.4, epi:4.4, concs:[1.0,1.5,2.0],             defConc:1.0 },
-  { id:'levobupivacaine', name:'Levobupivacaine', jp:'レボブピバカイン', plain:2,   epi:3,   concs:[0.25,0.5,0.75],           defConc:0.5 },
-  { id:'prilocaine',      name:'Prilocaine',      jp:'プリロカイン',     plain:6,   epi:8,   concs:[0.5,1.0,2.0,3.0],         defConc:1.0 },
+  { id:'lidocaine',       brand:'キシロカイン', name:'Lidocaine',       jp:'リドカイン',       plain:3,   epi:7,   concs:[0.5,1.0,1.5,2.0],        defConc:1.0 },
+  { id:'bupivacaine',     brand:'マーカイン',   name:'Bupivacaine',     jp:'ブピバカイン',     plain:2,   epi:3,   concs:[0.25,0.5],               defConc:0.5 },
+  { id:'ropivacaine',     brand:'アナペイン',   name:'Ropivacaine',     jp:'ロピバカイン',     plain:3,   epi:3,   concs:[0.2,0.375,0.5,0.75,1.0], defConc:0.5 },
+  { id:'mepivacaine',     brand:'カルボカイン', name:'Mepivacaine',     jp:'メピバカイン',     plain:4.4, epi:4.4, concs:[1.0,1.5,2.0],            defConc:1.0 },
+  { id:'levobupivacaine', brand:'ポプスカイン', name:'Levobupivacaine', jp:'レボブピバカイン', plain:2,   epi:3,   concs:[0.25,0.5,0.75],          defConc:0.5 },
 ];
 
 const RISK_FACTORS = [
@@ -462,8 +465,8 @@ function renderSelector() {
           onchange="toggleDrug('${d.id}',this.checked)"
           class="w-4 h-4 rounded accent-emerald-500 shadow-sm shrink-0 drop-shadow-[0_0_4px_rgba(16,185,129,0.3)]">
         <div class="min-w-0">
-          <div class="text-sm font-bold text-gray-100 tracking-wide">${d.name}</div>
-          <div class="text-[10px] text-gray-500 font-mono font-medium tracking-tight mt-0.5">${d.jp} · max ${d.plain}mg/kg</div>
+          <div class="text-sm font-bold text-gray-100 tracking-wide">${d.brand}</div>
+          <div class="text-[10px] text-gray-500 font-mono font-medium tracking-tight mt-0.5">${d.name} · max ${d.plain}mg/kg</div>
         </div>
       </label>`;
   }).join('');
@@ -597,8 +600,8 @@ function renderDrugList() {
       <div class="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-white/[0.02] transition-colors" onclick="toggleAccordion('${ds.id}')">
         <div class="flex-1 min-w-0">
           <div class="flex items-baseline gap-1.5">
-            <span class="text-sm font-bold text-gray-100 tracking-wide">${d.name}</span>
-            <span class="text-[10px] font-semibold text-gray-500">${d.jp}</span>
+            <span class="text-sm font-bold text-gray-100 tracking-wide">${d.brand}</span>
+            <span class="text-[10px] font-semibold text-gray-500">${d.name}</span>
           </div>
           <div class="flex items-center gap-2 mt-2">
             <div class="flex-1 h-1.5 bg-[#121212] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] rounded-full overflow-hidden">

@@ -22,6 +22,15 @@
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', 'G-PP6DGM6FWQ');
+
+    // イベント計測用フラグ（1セッション1回発火制御）
+    window._evt = {
+      calc: false, caution: false, danger: false,
+      symptoms: false, lipid: false, weight: false,
+    };
+    window.fireEvent = function(name, params) {
+      try { gtag('event', name, params || {}); } catch(e) {}
+    };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -441,6 +450,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     closeAllPopovers();
     const tab = btn.dataset.tab;
+    if (tab === 'symptoms' && !_evt.symptoms) { _evt.symptoms = true; fireEvent('view_symptoms'); }
+    if (tab === 'lipid' && !_evt.lipid) { _evt.lipid = true; fireEvent('view_lipid'); }
     document.querySelectorAll('.tab-btn').forEach(b => {
       const on = b.dataset.tab === tab;
       b.classList.toggle('text-emerald-400', on);
@@ -495,6 +506,7 @@ function toggleDrug(id, add) {
   if (add) {
     const d = DRUGS.find(x => x.id === id);
     S.drugs.push({ id, hasEpi:false, conc:d.defConc, volume:0, open:false });
+    fireEvent('add_drug', { drug_id: id });
   } else {
     S.drugs = S.drugs.filter(x => x.id !== id);
   }
@@ -737,7 +749,11 @@ function calculate() {
       if (maxMg > 0) frac += mg / maxMg;
     });
   }
-  updateGauge(frac * 100);
+  const pct = frac * 100;
+  if (pct >= 1 && !_evt.calc) { _evt.calc = true; fireEvent('calc_toxicity'); }
+  if (pct >= 50 && !_evt.caution) { _evt.caution = true; fireEvent('reach_caution', { pct: Math.round(pct) }); }
+  if (pct >= 80 && !_evt.danger) { _evt.danger = true; fireEvent('reach_danger', { pct: Math.round(pct) }); }
+  updateGauge(pct);
   updateAllRemaining(frac);
 }
 
@@ -853,12 +869,17 @@ function updatePresetHighlight(w) {
   });
 }
 
+function _logWeight() {
+  if (!_evt.weight) { _evt.weight = true; fireEvent('set_weight', { weight: S.weight }); }
+}
+
 function setWtDirect(w) {
   if (w < 1 || w > 250) return;
   S.weight = w;
   document.getElementById('wt-display').textContent = w;
   updatePresetHighlight(w);
   updateLipidDoses(); renderDrugList(); calculate();
+  _logWeight();
 }
 
 function adjustWt(delta) {
@@ -868,6 +889,7 @@ function adjustWt(delta) {
   document.getElementById('wt-pop-input').value = w;
   updatePresetHighlight(w);
   updateLipidDoses(); renderDrugList(); calculate();
+  _logWeight();
 }
 
 function presetWt(w) {
@@ -877,6 +899,7 @@ function presetWt(w) {
   updatePresetHighlight(w);
   updateLipidDoses(); renderDrugList(); calculate();
   closeWtPopover();
+  _logWeight();
 }
 
 const wBtn = document.getElementById('weight-btn');
